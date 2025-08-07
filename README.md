@@ -54,33 +54,6 @@ README.md # Project documentation
 
 > All packages are listed in `requirements_R.txt`.
 
----
-
-## 🚀 How to Run
-
-```bash
-# Example: ATAC-seq alignment with Bowtie2
-bash scripts/ATAC_CutTag/bowtie2_map.sh
-
-# Remove mitochondrial reads
-Rscript scripts/ATAC_CutTag/chrM_rm.R
-
-# Peak calling
-Rscript scripts/ATAC_CutTag/macs2_callpeak.R
-
-# Motif analysis
-Rscript scripts/ATAC_CutTag/motif.R
-
-# Differential peak analysis
-Rscript scripts/ATAC_CutTag/Diffbind.R
-
-# RNA-seq differential gene expression
-Rscript scripts/RNA_seq/RNA_diffgene.R
-
-# GO and KEGG enrichment
-Rscript scripts/RNA_seq/RNA_GO.R
-Rscript scripts/RNA_seq/RNA_KEGG.R
-
 📊 Results
 The results/ directory contains processed output files used to generate key figures in the manuscript, including:
 
