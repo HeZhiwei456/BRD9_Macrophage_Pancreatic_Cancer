@@ -1,0 +1,64 @@
+# R-related files
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+
+# RStudio project files
+*.Rproj
+
+# Python cache (if any)
+__pycache__/
+*.pyc
+*.pyo
+
+# Mac system files
+.DS_Store
+
+# Windows system files
+Thumbs.db
+desktop.ini
+
+# Logs and outputs
+*.log
+*.tmp
+*.out
+*.err
+*.swp
+
+# Bioinformatics large intermediate files
+*.bam
+*.bai
+*.sam
+*.cram
+*.vcf
+*.vcf.gz
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.gtf
+*.gff
+*.bw
+*.bed
+*.bedGraph
+*.hic
+*.counts
+*.tsv
+*.matrix
+*.idx
+*.narrowPeak
+*.broadPeak
+*.rds
+
+# Compressed/archived files
+*.gz
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
+
+# Environment or package folders
+.venv/
+renv/library/
