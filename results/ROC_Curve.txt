@@ -1,0 +1,60 @@
+## ==============================
+## 1. 加载包
+## ==============================
+library(tidyverse)
+library(pROC)
+
+## ==============================
+## 2. 输入数据
+## ==============================
+# expr_matrix: 基因表达矩阵（行为基因，列为样本）
+# clinical: 样本临床信息（至少包含 SampleID 和 Group 信息，如 Tumor/Normal）
+
+expr_matrix <- read.table("TCGA_PAAD_FPKM.txt", sep="\t", header=TRUE, row.names=1, check.names=FALSE)
+clinical <- read.table("TCGA_PAAD_clinical.txt", sep="\t", header=TRUE, check.names=FALSE)
+
+# 目标基因
+target_gene <- "BRD9"
+
+# 获取目标基因的表达值
+gene_exp <- as.numeric(expr_matrix[target_gene, ])
+names(gene_exp) <- colnames(expr_matrix)
+
+# 合并表达值与临床分组
+df <- data.frame(SampleID = names(gene_exp),
+                 Exp = gene_exp)
+df <- merge(df, clinical, by="SampleID")
+
+# 确保分组是二分类（1=肿瘤，0=正常）
+df$Status <- ifelse(df$Group == "Tumor", 1, 0)
+
+## ==============================
+## 3. ROC 曲线分析
+## ==============================
+roc_obj <- roc(df$Status, df$Exp, ci=TRUE, direction="<")
+
+# 提取 AUC 和 CI
+auc_value <- round(auc(roc_obj), 3)
+ci_values <- round(ci.auc(roc_obj), 3)
+
+## ==============================
+## 4. 绘制 ROC 曲线
+## ==============================
+plot(roc_obj, 
+     col="#f4a582", lwd=2,
+     legacy.axes=TRUE,  # 保留 (1-Specificity) 格式
+     grid=TRUE, grid.col="#cccccc",
+     main="")
+
+# 添加对角线
+abline(a=0, b=1, lty=2, col="grey50")
+
+# 添加文本（AUC 和 CI）
+text(0.65, 0.2, paste0(target_gene, "\nAUC: ", auc_value,
+                       "\nCI: ", ci_values[1], "-", ci_values[3]),
+     cex=0.9, adj=0)
+
+# 填充 ROC 曲线下方区域
+polygon(c(roc_obj$specificities, rev(roc_obj$specificities)),
+        c(roc_obj$sensitivities, rep(0, length(roc_obj$sensitivities))),
+        col=adjustcolor("#f4a582", alpha.f=0.2), border=NA)

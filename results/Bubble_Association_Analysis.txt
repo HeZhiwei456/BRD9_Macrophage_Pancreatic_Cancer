@@ -1,0 +1,73 @@
+## ==============================
+## 1. 加载 R 包
+## ==============================
+library(tidyverse)
+library(reshape2)
+library(ggpubr)
+library(ggtext)
+
+## ==============================
+## 2. 输入数据
+## ==============================
+# 表达矩阵（行为基因，列为样本），FPKM 或 TPM 格式
+expr <- read.table("TCGA_PAAD_FPKM.txt", sep="\t", header=TRUE, row.names=1, check.names=FALSE)
+
+# 免疫细胞浸润矩阵（行为细胞类型，列为样本）
+# 建议使用 CIBERSORT、xCell、EPIC 等得到
+immune <- read.table("TCGA_PAAD_CIBERSORT_LM22.txt", sep="\t", header=TRUE, row.names=1, check.names=FALSE)
+
+## ==============================
+## 3. 获取 CCL20 表达量
+## ==============================
+target_gene <- "CCL20"
+gene_exp <- as.numeric(expr[target_gene, ])
+names(gene_exp) <- colnames(expr)
+
+## 确保样本匹配
+common_samples <- intersect(colnames(immune), names(gene_exp))
+immune <- immune[, common_samples]
+gene_exp <- gene_exp[common_samples]
+
+## ==============================
+## 4. 计算相关性
+## ==============================
+cor_res <- data.frame(Cell=rownames(immune), R=NA, P=NA)
+for(i in 1:nrow(immune)){
+  test <- cor.test(as.numeric(immune[i, ]), gene_exp, method="spearman")
+  cor_res$R[i] <- test$estimate
+  cor_res$P[i] <- test$p.value
+}
+
+## ==============================
+## 5. 调整显著性标注
+## ==============================
+cor_res$Signif <- cut(cor_res$P,
+                      breaks=c(-Inf, 0.001, 0.01, 0.05, Inf),
+                      labels=c("***", "**", "*", "ns"))
+
+## 计算 |Cor| 用于气泡大小
+cor_res$AbsR <- abs(cor_res$R)
+
+## ==============================
+## 6. 排序
+## ==============================
+cor_res <- cor_res %>% arrange(desc(R))
+cor_res$Cell <- factor(cor_res$Cell, levels=cor_res$Cell)
+
+## ==============================
+## 7. 绘制气泡图
+## ==============================
+ggplot(cor_res, aes(x=R, y=Cell)) +
+  geom_segment(aes(x=0, xend=R, y=Cell, yend=Cell), color="black") +
+  geom_point(aes(size=AbsR, color=P)) +
+  scale_color_gradient(low="purple", high="yellow", name="P value") +
+  geom_text(aes(label=paste0("R = ", round(R, 3), Signif)),
+            hjust=-0.2, size=3.2) +
+  scale_size(range=c(3, 8), name="|Cor|") +
+  theme_bw() +
+  labs(title="TCGA-PAAD : CCL20 and Immune Cell Infiltration",
+       x="Correlation", y="") +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.title=element_text(size=14, face="bold", hjust=0.5))
+

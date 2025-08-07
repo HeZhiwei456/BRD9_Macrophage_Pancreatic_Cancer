@@ -1,0 +1,108 @@
+##################################################
+## 1. 加载必要的R包
+##################################################
+library(Seurat)
+library(tidyverse)
+library(patchwork)
+library(SingleCellExperiment)
+library(cowplot)
+library(CellChat)
+library(monocle3)
+
+##################################################
+## 2. 读取原始数据（10X 数据）
+##################################################
+# 如果是10X Genomics数据
+sc.data <- Read10X(data.dir = "data/filtered_feature_bc_matrix/")
+seurat.obj <- CreateSeuratObject(counts = sc.data, project = "scRNA", min.cells = 3, min.features = 200)
+
+##################################################
+## 3. 质控 (QC)
+##################################################
+# 添加线粒体比例
+seurat.obj[["percent.mt"]] <- PercentageFeatureSet(seurat.obj, pattern = "^MT-")
+
+# 可视化QC指标
+VlnPlot(seurat.obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+
+# 根据质控阈值过滤
+seurat.obj <- subset(seurat.obj, subset = nFeature_RNA > 200 & nFeature_RNA < 6000 & percent.mt < 10)
+
+##################################################
+## 4. 标准化 & 找高变基因
+##################################################
+seurat.obj <- NormalizeData(seurat.obj)
+seurat.obj <- FindVariableFeatures(seurat.obj, selection.method = "vst", nfeatures = 2000)
+
+##################################################
+## 5. PCA & 降维
+##################################################
+seurat.obj <- ScaleData(seurat.obj)
+seurat.obj <- RunPCA(seurat.obj)
+ElbowPlot(seurat.obj) # 看主成分数目
+
+##################################################
+## 6. 聚类 & UMAP
+##################################################
+seurat.obj <- FindNeighbors(seurat.obj, dims = 1:20)
+seurat.obj <- FindClusters(seurat.obj, resolution = 0.5)
+seurat.obj <- RunUMAP(seurat.obj, dims = 1:20)
+
+DimPlot(seurat.obj, reduction = "umap", label = TRUE)
+
+##################################################
+## 7. 细胞类型注释
+##################################################
+# 手动marker基因匹配
+FeaturePlot(seurat.obj, features = c("EPCAM", "PTPRC", "CD3D", "CD79A", "COL1A1", "VWF"))
+
+# 或使用SingleR自动注释
+# library(SingleR)
+# ref <- HumanPrimaryCellAtlasData()
+# pred <- SingleR(test = as.SingleCellExperiment(seurat.obj), ref = ref, labels = ref$label.main)
+# seurat.obj$SingleR_label <- pred$labels
+
+##################################################
+## 8. 感兴趣基因可视化（例如BRD9）
+##################################################
+FeaturePlot(seurat.obj, features = "BRD9", cols = c("lightgrey", "red"))
+
+##################################################
+## 9. 细胞通讯分析（CellChat）
+##################################################
+data.input <- GetAssayData(seurat.obj, assay = "RNA", slot = "data") 
+meta <- seurat.obj@meta.data
+cellchat <- createCellChat(object = data.input, meta = meta, group.by = "seurat_clusters")
+
+CellChatDB <- CellChatDB.human # 或 CellChatDB.mouse
+cellchat@DB <- CellChatDB
+
+cellchat <- subsetData(cellchat)
+cellchat <- identifyOverExpressedGenes(cellchat)
+cellchat <- identifyOverExpressedInteractions(cellchat)
+cellchat <- projectData(cellchat, PPI.human)
+
+cellchat <- computeCommunProb(cellchat)
+cellchat <- filterCommunication(cellchat, min.cells = 10)
+cellchat <- computeCommunProbPathway(cellchat)
+cellchat <- aggregateNet(cellchat)
+
+netVisual_circle(cellchat@net$count, vertex.weight = as.numeric(table(cellchat@idents)), 
+                 weight.scale = TRUE, label.edge = FALSE, title.name = "CCL signaling pathway network")
+
+##################################################
+## 10. 轨迹推断分析（Monocle3）
+##################################################
+cds <- as.cell_data_set(seurat.obj)
+cds <- cluster_cells(cds, reduction_method = "UMAP")
+cds <- learn_graph(cds)
+cds <- order_cells(cds)
+
+# 绘制轨迹图
+plot_cells(cds, color_cells_by = "cell_type", label_groups_by_cluster = FALSE, label_leaves = FALSE)
+
+##################################################
+## 11. 保存对象
+##################################################
+saveRDS(seurat.obj, file = "seurat_obj_qc_cluster_annotated.rds")
+saveRDS(cellchat, file = "cellchat_results.rds")

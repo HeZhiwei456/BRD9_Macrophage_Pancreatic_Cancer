@@ -1,0 +1,87 @@
+##################################################
+## 1. 加载R包
+##################################################
+library(tidyverse)
+library(clusterProfiler)
+library(org.Hs.eg.db)   # 人类注释包
+library(msigdbr)
+library(DOSE)
+library(enrichplot)
+
+##################################################
+## 2. 读取表达矩阵（行=基因名，列=样本）
+##################################################
+# 假设是一个 log2(FPKM+1) 的矩阵
+expr <- read.table("expression_matrix.txt", 
+                   sep = "\t", header = TRUE, row.names = 1, check.names = FALSE)
+
+##################################################
+## 3. 读取临床分组信息（包含样本ID与分组）
+##################################################
+meta <- read.table("sample_metadata.txt", sep = "\t", header = TRUE)
+
+# 指定要分组的基因
+target_gene <- "CCL20"
+
+##################################################
+## 4. 根据目标基因表达量分组（高 vs 低）
+##################################################
+gene_exp <- expr[target_gene, ]
+group <- ifelse(gene_exp >= median(gene_exp), "High", "Low")
+
+meta$Group <- group[match(meta$SampleID, names(gene_exp))]
+
+##################################################
+## 5. 差异分析（用limma或DESeq2）
+##################################################
+library(limma)
+
+design <- model.matrix(~ 0 + Group, data = meta)
+colnames(design) <- c("High", "Low")
+
+fit <- lmFit(expr, design)
+contrast.matrix <- makeContrasts(High - Low, levels = design)
+fit2 <- contrasts.fit(fit, contrast.matrix)
+fit2 <- eBayes(fit2)
+
+deg <- topTable(fit2, adjust = "fdr", number = Inf)
+deg <- deg[order(deg$t, decreasing = TRUE), ]  # 按 t 值排序
+
+##################################################
+## 6. 构建 GSEA 排序列表
+##################################################
+gene_list <- deg$t
+names(gene_list) <- rownames(deg)
+gene_list <- sort(gene_list, decreasing = TRUE)
+
+##################################################
+## 7. 获取基因集（MSigDB，例如 Hallmark）
+##################################################
+m_df <- msigdbr(species = "Homo sapiens", category = "H") # Hallmark 基因集
+msig_list <- split(x = m_df$gene_symbol, f = m_df$gs_name)
+
+##################################################
+## 8. 运行 GSEA
+##################################################
+gsea_res <- GSEA(geneList = gene_list,
+                 TERM2GENE = msig_list,
+                 pvalueCutoff = 0.05,
+                 verbose = FALSE)
+
+##################################################
+## 9. 查看结果
+##################################################
+head(gsea_res@result)
+
+##################################################
+## 10. 绘制富集曲线（指定通路）
+##################################################
+gseaplot2(gsea_res, 
+          geneSetID = "HALLMARK_TNFA_SIGNALING_VIA_NFKB", 
+          title = "TNF Pathway\n(CCL20 High vs Low)",
+          pvalue_table = TRUE)
+
+##################################################
+## 11. 保存结果
+##################################################
+write.csv(gsea_res@result, "GSEA_results_CCL20.csv", row.names = FALSE)

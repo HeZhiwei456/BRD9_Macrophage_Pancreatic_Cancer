@@ -1,0 +1,72 @@
+# 导入R包
+library(survival)
+library(survminer)
+
+# 导入临床数据
+df <- read.csv("clinical.csv", row.names = 1, header = TRUE, check.names = FALSE)
+
+# 获取想要的生存数据，包含生存期、死亡状态、风险类型（分组）
+rt <- df[, c("Overallsurvival", "Deadstatus", "RiskType")]
+colnames(rt)[3] <- "Type"
+head(rt)
+
+# 看看共有几组类别
+groupNum <- length(levels(factor(rt[,"Type"])))
+
+# 生存分析
+diff <- survdiff(Surv(Overallsurvival, Deadstatus) ~ Type, data = rt)
+
+# 卡方检验P值
+pValue <- diff$p
+if (pValue < 0.001) {
+  pValue <- "p<0.001"
+} else {
+  pValue <- paste0("p=", sprintf("%.03f", pValue))
+}
+
+# 拟合生存曲线
+fit <- survfit(Surv(Overallsurvival, Deadstatus) ~ Type, data = rt)
+
+# 绘制初步生存曲线
+surPlot <- ggsurvplot(
+  fit, data = rt, conf.int = FALSE,     # 不显示置信区间
+  pval = pValue, pval.size = 4,
+  legend.labs = levels(factor(rt[,"Type"])),
+  legend.title = "Group",
+  xlab = "Time(Day)",
+  break.time.by = 700
+)
+
+# 添加风险表（分组样本信息）
+surPlot <- ggsurvplot(
+  fit, data = rt, conf.int = FALSE,
+  pval = pValue, pval.size = 4,
+  legend.labs = levels(rt$Type),
+  legend.title = "Group",
+  xlab = "Time(Day)",
+  break.time.by = 700,
+  risk.table = TRUE,
+  risk.table.height = 0.25
+)
+
+# 计算 HR 值
+res_cox <- coxph(Surv(Overallsurvival, Deadstatus) ~ Type, data = rt)
+
+# 添加 HR 值和置信区间到图上
+surPlot$plot <- surPlot$plot +
+  ggplot2::annotate(
+    "text", x = 280, y = 0.14, # HR 位置
+    label = paste("HR :", round(summary(res_cox)$conf.int[1], 2))
+  ) +
+  ggplot2::annotate(
+    "text", x = 280, y = 0.08, # 置信区间位置
+    label = paste(
+      "(",
+      "95%CI:", round(summary(res_cox)$conf.int[3], 2), "-",
+      round(summary(res_cox)$conf.int[4], 2),
+      ")", sep = ""
+    )
+  )
+
+# 输出最终图形
+surPlot

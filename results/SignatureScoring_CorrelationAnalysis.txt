@@ -1,0 +1,57 @@
+rm(list = ls())
+library(dplyr)
+library(ggplot2)
+
+## 1. 读取表达矩阵
+expr <- read.table("TCGA-PAAD_FPKM.txt", 
+                   sep = "\t", header = TRUE, check.names = FALSE)
+colnames(expr)[1] <- "Gene"
+expr <- as.data.frame(expr)
+
+## 2. 读取 Signature 基因列表
+cachexia_genes <- read.table("cachexia_genes.txt", header = FALSE)$V1
+m2_genes <- read.table("m2_macrophage_genes.txt", header = FALSE)$V1
+
+## 3. log2 转换
+expr_mat <- expr
+rownames(expr_mat) <- expr_mat$Gene
+expr_mat <- expr_mat[,-1]
+expr_mat <- log2(expr_mat + 1)
+
+## 4. 计算 Signature 分数（取平均表达值）
+get_signature_score <- function(gene_list, mat) {
+  genes_use <- intersect(gene_list, rownames(mat))
+  if (length(genes_use) == 0) stop("基因列表与表达矩阵没有交集！")
+  score <- colMeans(mat[genes_use, , drop = FALSE])
+  return(score)
+}
+
+cachexia_score <- get_signature_score(cachexia_genes, expr_mat)
+m2_score <- get_signature_score(m2_genes, expr_mat)
+
+## 5. 合并为数据框
+df_sig <- data.frame(
+  Sample = names(cachexia_score),
+  Cachexia_Signature = cachexia_score,
+  M2_Macrophage_Signature = m2_score
+)
+
+## 6. Spearman 相关性
+cor_result <- cor.test(df_sig$Cachexia_Signature, 
+                       df_sig$M2_Macrophage_Signature, 
+                       method = "spearman")
+R_value <- round(cor_result$estimate, 3)
+p_value <- signif(cor_result$p.value, 3)
+p_label <- ifelse(p_value < 0.001, "P < 0.001", paste0("P = ", p_value))
+
+## 7. 绘制散点图
+ggplot(df_sig, aes(x = Cachexia_Signature, y = M2_Macrophage_Signature)) +
+  geom_point(color = "red", size = 3, alpha = 0.8) +
+  geom_smooth(method = "lm", color = "red", se = TRUE) +
+  annotate("text", 
+           x = min(df_sig$Cachexia_Signature) + 0.2, 
+           y = max(df_sig$M2_Macrophage_Signature) - 0.2, 
+           label = paste0("Spearman\nR = ", R_value, "\n", p_label), 
+           size = 5, hjust = 0) +
+  labs(x = "Cachexias Signature", y = "M2 Macrophage Signature") +
+  theme_bw(base_size = 14)

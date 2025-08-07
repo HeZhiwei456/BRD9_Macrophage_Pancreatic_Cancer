@@ -1,0 +1,52 @@
+## ===========================
+## TCGA-PAAD 两个基因相关性分析 (Spearman)
+## ===========================
+
+rm(list = ls())
+library(ggplot2)
+library(dplyr)
+
+## 1. 读取 TCGA-PAAD 表达矩阵（FPKM 或 TPM 格式）
+# 格式要求：第一列为基因名（Gene Symbol），其余列为样本
+# 你可以用 UCSC Xena / TCGAbiolinks 下载
+expr <- read.table("TCGA-PAAD_FPKM.txt", 
+                   sep = "\t", header = TRUE, check.names = FALSE)
+
+# 确保第一列是 Gene Symbol
+colnames(expr)[1] <- "Gene"
+expr <- as.data.frame(expr)
+
+## 2. 选择要分析的两个基因
+geneA <- "ELF1"
+geneB <- "CCL20"
+
+# 提取两个基因的表达量
+df_gene <- expr %>%
+  filter(Gene %in% c(geneA, geneB))
+
+# 检查是否都存在
+if (nrow(df_gene) < 2) stop("有一个或两个基因不在表达矩阵中，请检查基因名！")
+
+# 转置，行=样本，列=基因
+df_t <- as.data.frame(t(df_gene[,-1]))
+colnames(df_t) <- df_gene$Gene
+df_t <- log2(df_t + 1)  # log2 转换
+head(df_t)
+
+## 3. 计算 Spearman 相关性
+cor_result <- cor.test(df_t[[geneA]], df_t[[geneB]], method = "spearman")
+R_value <- round(cor_result$estimate, 2)
+p_value <- signif(cor_result$p.value, 3)
+
+## 4. 绘制散点图
+ggplot(df_t, aes_string(x = geneA, y = geneB)) +
+  geom_point(color = "brown", size = 3, alpha = 0.8) +
+  geom_smooth(method = "lm", color = "black", se = FALSE) +
+  annotate("text", 
+           x = min(df_t[[geneA]], na.rm = TRUE) + 0.2, 
+           y = max(df_t[[geneB]], na.rm = TRUE) - 0.2, 
+           label = paste0("Spearman R = ", R_value, "\nP = ", p_value), 
+           size = 5, hjust = 0) +
+  labs(x = bquote(Log[2] ~ "(" * .(geneA) * " expression)"),
+       y = bquote(Log[2] ~ "(" * .(geneB) * " expression)")) +
+  theme_bw(base_size = 14)

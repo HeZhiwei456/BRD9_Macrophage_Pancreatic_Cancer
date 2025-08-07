@@ -1,0 +1,97 @@
+## ========================
+## Cox 回归分析（单因素 + 多因素）
+## ========================
+
+# 清空环境
+rm(list = ls()); gc()
+
+# 加载包
+library(survival)
+library(dplyr)
+
+# 假设 df 是你的临床数据框
+# 必须包含：
+# os_time（随访时间，单位：月或天）
+# os_status（结局状态，0=存活，1=死亡）
+# 以及所有危险因素变量
+
+# 设置所有要分析的危险因素
+risk_factors <- c(
+  "Age",                # 年龄（<65 / ≥65）
+  "Gender",             # 性别（Male / Female）
+  "Clinical_T_Stage",   # T 分期
+  "Clinical_N_Stage",   # N 分期
+  "Clinical_M_Stage",   # M 分期
+  "AJCC_Stage",         # AJCC 分期
+  "Cachexia_Score"      # 恶病质评分
+)
+
+# -------------------------
+# 1. 分类变量因子化
+# -------------------------
+for (var in risk_factors) {
+  if (!is.numeric(df[[var]])) {
+    df[[var]] <- as.factor(df[[var]])
+  }
+}
+
+# -------------------------
+# 2. 单因素 Cox 回归
+# -------------------------
+uni_cox_results <- data.frame()
+
+for (var in risk_factors) {
+  cox_model <- coxph(Surv(time = os_time, event = os_status) ~ df[[var]], data = df)
+  cox_sum <- summary(cox_model)
+  
+  uni_cox_results <- rbind(
+    uni_cox_results,
+    data.frame(
+      Variable = var,
+      HR = round(cox_sum$coefficients[,"exp(coef)"], 3),
+      L95CI = round(cox_sum$conf.int[,"lower .95"], 3),
+      H95CI = round(cox_sum$conf.int[,"upper .95"], 3),
+      pvalue = signif(cox_sum$coefficients[,"Pr(>|z|)"], 3)
+    )
+  )
+}
+
+# 保存单因素结果
+write.csv(uni_cox_results, "result/单因素COX_全部危险因素.csv", row.names = FALSE)
+
+# -------------------------
+# 3. 多因素 Cox 回归（一次性纳入所有危险因素）
+# -------------------------
+formula_str <- paste("Surv(time = os_time, event = os_status) ~",
+                     paste(risk_factors, collapse = " + "))
+
+multi_cox <- coxph(as.formula(formula_str), data = df)
+multi_sum <- summary(multi_cox)
+
+multi_cox_results <- data.frame(
+  Variable = rownames(multi_sum$coefficients),
+  HR = round(multi_sum$coefficients[,"exp(coef)"], 3),
+  L95CI = round(multi_sum$conf.int[,"lower .95"], 3),
+  H95CI = round(multi_sum$conf.int[,"upper .95"], 3),
+  pvalue = signif(multi_sum$coefficients[,"Pr(>|z|)"], 3)
+)
+
+# 保存多因素结果
+write.csv(multi_cox_results, "result/多因素COX_全部危险因素.csv", row.names = FALSE)
+
+# -------------------------
+# 4. 检查比例风险假设（可选）
+# -------------------------
+# 检查多因素模型的比例风险假设
+cox.zph(multi_cox) %>% print()
+# 绘制 Schoenfeld 残差图（可视化 PH 假设）
+# plot(cox.zph(multi_cox))
+
+# -------------------------
+# 5. 输出结果
+# -------------------------
+cat("\n===== 单因素 Cox 回归结果 =====\n")
+print(uni_cox_results)
+
+cat("\n===== 多因素 Cox 回归结果 =====\n")
+print(multi_cox_results)

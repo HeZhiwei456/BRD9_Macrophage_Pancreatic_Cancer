@@ -1,0 +1,81 @@
+## ==============================
+## 1. 加载包
+## ==============================
+library(tidyverse)
+library(ggpubr)
+
+## ==============================
+## 2. 示例数据（请替换为你的 TCGA+GTEX 数据）
+## ==============================
+# gene_exp: 基因表达量 (log2 TPM)，示例用随机数据
+set.seed(123)
+n <- 150
+data_df <- data.frame(
+  Purity = runif(n, 0.2, 0.8),
+  Macrophage_XCELL = runif(n, 0, 0.15),
+  Macrophage_M1_XCELL = runif(n, 0, 0.1),
+  Macrophage_M2_XCELL = runif(n, 0, 0.15),
+  GeneExp = rnorm(n, 2, 0.5)
+)
+
+## ==============================
+## 3. 计算相关性和 p 值
+## ==============================
+cor_results <- data.frame(CellType = character(), Rho = numeric(), P = numeric())
+
+for(cell in c("Purity", "Macrophage_XCELL", "Macrophage_M1_XCELL", "Macrophage_M2_XCELL")){
+  cor_test <- cor.test(data_df[[cell]], data_df$GeneExp, method = "spearman")
+  cor_results <- rbind(cor_results,
+                       data.frame(CellType = cell,
+                                  Rho = cor_test$estimate,
+                                  P = cor_test$p.value))
+}
+
+## ==============================
+## 4. 格式化标签
+## ==============================
+cor_results <- cor_results %>%
+  mutate(
+    Signif = case_when(
+      P < 0.001 ~ "***",
+      P < 0.01  ~ "**",
+      P < 0.05  ~ "*",
+      TRUE ~ "ns"
+    ),
+    Label = paste0("Rho = ", round(Rho, 3), Signif, "\n",
+                   "p ", ifelse(P < 0.05, "<0.05", ">0.05")),
+    Color = ifelse(P < 0.05,
+                   ifelse(Rho > 0, "red", "red"),
+                   "blue")
+  )
+
+## ==============================
+## 5. 绘制多面板图
+## ==============================
+plot_list <- list()
+
+for(i in seq_along(cor_results$CellType)){
+  cell <- cor_results$CellType[i]
+  label_text <- cor_results$Label[i]
+  label_color <- cor_results$Color[i]
+  
+  p <- ggplot(data_df, aes_string(x = cell, y = "GeneExp")) +
+    geom_point(size = 2, alpha = 0.7) +
+    geom_smooth(method = "lm", se = TRUE, color = "blue") +
+    labs(x = ifelse(cell == "Purity", "Purity", "Infiltration Level"),
+         y = "Gene Expression Level (log2 TPM)",
+         title = cell) +
+    annotate("text", x = max(data_df[[cell]])*0.7,
+             y = max(data_df$GeneExp)*1.05,
+             label = label_text, color = label_color, size = 4, hjust = 0) +
+    theme_bw() +
+    theme(plot.title = element_text(face = "bold", hjust = 0.5),
+          panel.grid.minor = element_blank())
+  
+  plot_list[[i]] <- p
+}
+
+## ==============================
+## 6. 合并图形
+## ==============================
+ggarrange(plotlist = plot_list, ncol = 4, nrow = 1)
